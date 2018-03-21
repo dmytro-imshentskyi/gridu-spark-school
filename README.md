@@ -7,8 +7,8 @@ https://docs.google.com/document/d/1ihded5qAWkffR0UvPJ5JolwaKOFijpkkT7_vB_EtlZI/
 All sub-tasks have been completed with using Spark SQL on top of DataFrame API.  
 Project contains only 3 files:
 - apple.package contains domain class Event
-- ClickStreamData is a objects with test data
+- ClickStreamData is an object with test data
 - ClickStreamAnalyzer is a driver program 
 
 To kick off Spark application, please import project as SBT file and run ClickStreamAnalyzer main class.
-Result will be printed at the console. 
+Result will be printed in the console. 
