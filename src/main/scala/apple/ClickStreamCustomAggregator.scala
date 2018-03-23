@@ -8,7 +8,7 @@ import org.apache.spark.sql.expressions.Aggregator
 import scala.collection.mutable
 
 
-class CustomAggregator extends Aggregator[Event, Seq[Event], Seq[EventWithSession]] {
+object ClickStreamCustomAggregator extends Aggregator[Event, Seq[Event], Seq[EventWithSession]] {
 
   override def zero: Seq[Event] = Seq.empty[Event]
 
