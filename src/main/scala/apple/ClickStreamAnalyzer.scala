@@ -4,8 +4,6 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{Dataset, SparkSession}
 
-import scala.collection.mutable
-
 object ClickStreamAnalyzer {
 
   def main(args: Array[String]): Unit = {
@@ -17,42 +15,92 @@ object ClickStreamAnalyzer {
     val eventsDS: Dataset[Event] = spark.createDataset(spark.sparkContext.parallelize(ClickStreamData.events))
     eventsDS.createOrReplaceTempView("events")
 
-    println("Task #1. Enrich incoming data with sessions")
-    val resultSql = spark.sql(
-      """
-        SELECT categoryId, productId, userId, title, eventTime, eventType, sessionStartTime, sessionEndTime,
-        (RANK() OVER(PARTITION BY categoryId, end ORDER BY categoryId, end)) * UNIX_TIMESTAMP(end) as sessionId,
-        UNIX_TIMESTAMP(sessionEndTime) - UNIX_TIMESTAMP(sessionStartTime) as sessionDuration
-        FROM (
-            SELECT e.*,
-            MIN(eventTime) OVER(PARTITION BY categoryId, window(eventTime, '5 minutes', '5 minutes')) as sessionStartTime,
-            MAX(eventTime) OVER(PARTITION BY categoryId, window(eventTime, '5 minutes', '5 minutes')) as sessionEndTime,
-            window.end
-            FROM events e
-        )
-        ORDER BY categoryId, eventTime, sessionId
-      """)
+    println("Task #0. Enrich incoming data with session data with using custom aggregator")
+    val aggregator = new CustomAggregator().toColumn
 
-    resultSql.cache()
-    resultSql.show(50, truncate = false)
-
-    println("Task #2. For each category find median session duration")
-
-    resultSql.createOrReplaceTempView("eventsWithSession")
-    spark.sqlContext.udf.register("MEDIUM_UDF", mediumUdf)
+    val eventsByAggregator = eventsDS.groupByKey(_.categoryId).agg(aggregator.name("events"))
+      .select(explode($"events").as("eventsWithSession"))
+    eventsByAggregator.createOrReplaceTempView("eventsWithSessionByAgr")
 
     spark.sql(
       """
-        SELECT categoryId,
-        ROUND(MEDIUM_UDF(COLLECT_LIST(sessionDuration)) / 60, 2) as mediumOfSessionDurationInMinutes
-        FROM eventsWithSession
+        SELECT categoryId, productId, userId, title, eventType,
+        eventTime, sessionStartTime, sessionEndTime,
+        categoryId * UNIX_TIMESTAMP(sessionEndTime) as sessionId
+        FROM (
+          SELECT e.*,
+          MIN(eventTime) OVER(PARTITION BY categoryId, sessionId) as sessionStartTime,
+          MAX(eventTime) OVER(PARTITION BY categoryId, sessionId) as sessionEndTime
+          FROM
+          (
+            SELECT eventsWithSession._2.categoryId as categoryId,
+            eventsWithSession._2.productId as productId,
+            eventsWithSession._2.userId as userId,
+            eventsWithSession._2.title as title,
+            eventsWithSession._2.eventTime as eventTime,
+            eventsWithSession._2.eventType as eventType,
+            eventsWithSession._1 as sessionId
+            FROM eventsWithSessionByAgr
+          ) e
+        )
+        ORDER BY categoryId, eventTime, sessionId
+      """)
+      .show(50, truncate = false)
+
+    println("Task #1. Enrich incoming data with session data with using sql window function")
+    spark.sqlContext.udf.register("TRUNCATE", truncateUdf)
+
+    val eventsWithSession = spark.sql(
+      """
+         SELECT categoryId, productId, userId, eventTime, title,
+         MIN(eventTime) OVER (PARTITION BY sessionId) as sessionStartTime,
+         MAX(eventTime) OVER (PARTITION BY sessionId) as sessionEndTime, sessionId
+         FROM (
+            SELECT de.*,
+            SUM(CASE
+                  WHEN
+                    categoryId != prevCategoryId THEN 1
+                  WHEN
+                    eventTimeDiffClassifier != prevEventTimeDiffClassifier AND prevEventTimeDiffClassifier = 0 THEN 1
+                  ELSE 0
+                END) OVER(ORDER BY categoryId, eventTime) as sessionId
+            FROM (
+                SELECT ne.*,
+                LAG(eventTimeDiffClassifier, 1, eventTimeDiffClassifier) OVER(ORDER BY categoryId, eventTime) as prevEventTimeDiffClassifier,
+                LAG(categoryId, 1, categoryId) OVER(ORDER BY categoryId, eventTime) as prevCategoryId
+                FROM (
+                  SELECT xe.*
+                  FROM (
+                SELECT se.*,
+                TRUNCATE((UNIX_TIMESTAMP(eventTime) - UNIX_TIMESTAMP(laggedEventTime)) / 60 / 5) as eventTimeDiffClassifier
+                FROM (
+                  SELECT e.*,
+                  LAG(eventTime, 1, eventTime) OVER(PARTITION BY categoryId ORDER BY eventTime) as laggedEventTime
+                  FROM events e
+                ) se
+              ) xe
+            ) ne
+          ) de
+          )
+          ORDER BY categoryId, eventTime
+      """)
+
+    eventsWithSession.show(50, truncate = false)
+    eventsWithSession.createOrReplaceTempView("eventsWithSession")
+
+    println("Task #2. For each category find median session duration")
+    spark.sql(
+      """
+        SELECT categoryId, percentile_approx(sessionDuration, 0.5) as medianSessionDuration
+        FROM (
+          SELECT categoryId, UNIX_TIMESTAMP(sessionEndTime) - UNIX_TIMESTAMP(sessionStartTime) as sessionDuration
+          FROM eventsWithSession
+        )
         GROUP BY categoryId
         ORDER BY categoryId
       """).show(truncate = false)
 
-
     println("Task #3. For each category find # of unique users spending less than 1 min, 1 to 5 mins and more than 5 mins")
-
     spark.sql(
       """
         SELECT categoryId, timeGroup, COUNT(DISTINCT userId) as userCount
@@ -111,20 +159,9 @@ object ClickStreamAnalyzer {
     spark.stop()
   }
 
-  def medium(elements: mutable.WrappedArray[Long]): Long = {
-    val size = elements.size
-    if(size == 1){
-      elements.head
-    }
-
-    val sortedSeq = elements.sortWith(_ < _)
-    if (size % 2 == 1) sortedSeq(size / 2)
-    else {
-      val (up, down) = sortedSeq.splitAt(size / 2)
-      (up.last + down.head) / 2
-    }
+  def truncate(value: Double): Int = {
+    value.toInt
   }
 
-  def mediumUdf: UserDefinedFunction = udf[Long, mutable.WrappedArray[Long]](medium)
-
+  def truncateUdf: UserDefinedFunction = udf[Int, Double](truncate)
 }
