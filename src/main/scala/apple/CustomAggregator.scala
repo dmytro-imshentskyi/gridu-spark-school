@@ -25,7 +25,7 @@ class CustomAggregator extends Aggregator[Event, Seq[Event], Seq[EventWithSessio
   }
 
   override def finish(buf: Seq[Event]): Seq[EventWithSession]  = {
-    val sortedEvents = buf.sorted(EventOrdering)
+    val sortedEvents = buf.sorted
 
     val eventsBySession = mutable.HashMap[Long, Seq[Event]]()
     var prevEvent: Event = null
