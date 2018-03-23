@@ -18,7 +18,8 @@ object ClickStreamAnalyzer {
     println("Task #0. Enrich incoming data with session data with using custom aggregator")
     val aggregator = ClickStreamCustomAggregator.toColumn
 
-    val eventsByAggregator = eventsDS.groupByKey(_.categoryId).agg(aggregator.name("events")).select(explode($"events").as("eventsWithSession"))
+    val eventsByAggregator = eventsDS.groupByKey(_.categoryId)
+      .agg(aggregator.name("events")).select(explode($"events").as("eventsWithSession"))
     eventsByAggregator.createOrReplaceTempView("eventsWithSessionByAgr")
 
     spark.sql(
