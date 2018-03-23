@@ -18,34 +18,23 @@ object ClickStreamAnalyzer {
     println("Task #0. Enrich incoming data with session data with using custom aggregator")
     val aggregator = new CustomAggregator().toColumn
 
-    val eventsByAggregator = eventsDS.groupByKey(_.categoryId).agg(aggregator.name("events"))
-      .select(explode($"events").as("eventsWithSession"))
+    val eventsByAggregator = eventsDS.groupByKey(_.categoryId).agg(aggregator.name("events")).select(explode($"events").as("eventsWithSession"))
     eventsByAggregator.createOrReplaceTempView("eventsWithSessionByAgr")
 
     spark.sql(
       """
-        SELECT categoryId, productId, userId, title, eventType,
-        eventTime, sessionStartTime, sessionEndTime,
-        categoryId * UNIX_TIMESTAMP(sessionEndTime) as sessionId
-        FROM (
-          SELECT e.*,
-          MIN(eventTime) OVER(PARTITION BY categoryId, sessionId) as sessionStartTime,
-          MAX(eventTime) OVER(PARTITION BY categoryId, sessionId) as sessionEndTime
-          FROM
-          (
-            SELECT eventsWithSession._2.categoryId as categoryId,
-            eventsWithSession._2.productId as productId,
-            eventsWithSession._2.userId as userId,
-            eventsWithSession._2.title as title,
-            eventsWithSession._2.eventTime as eventTime,
-            eventsWithSession._2.eventType as eventType,
-            eventsWithSession._1 as sessionId
-            FROM eventsWithSessionByAgr
-          ) e
-        )
+        SELECT eventsWithSession.event.categoryId,
+        eventsWithSession.event.productId,
+        eventsWithSession.event.userId,
+        eventsWithSession.event.title,
+        eventsWithSession.event.eventType,
+        eventsWithSession.event.eventTime,
+        eventsWithSession.sessionStartTime,
+        eventsWithSession.sessionEndTime,
+        eventsWithSession.sessionId
+        FROM eventsWithSessionByAgr
         ORDER BY categoryId, eventTime, sessionId
-      """)
-      .show(50, truncate = false)
+      """).show(50, truncate = false)
 
     println("Task #1. Enrich incoming data with session data with using sql window function")
     spark.sqlContext.udf.register("TRUNCATE", truncateUdf)
