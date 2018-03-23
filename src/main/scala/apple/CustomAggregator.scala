@@ -14,19 +14,10 @@ class CustomAggregator extends Aggregator[Event, Seq[Event], Seq[EventWithSessio
 
   override def reduce(buf: Seq[Event], event: Event): Seq[Event] = buf :+ event
 
-  override def merge(buf1: Seq[Event], buf2: Seq[Event]): Seq[Event] = {
-    if(buf1.isEmpty) {
-      return buf2
-    }
-    if(buf2.isEmpty) {
-      return buf1
-    }
-    buf2 ++ buf1
-  }
+  override def merge(buf1: Seq[Event], buf2: Seq[Event]): Seq[Event] = buf2 ++ buf1
 
   override def finish(buf: Seq[Event]): Seq[EventWithSession]  = {
     val sortedEvents = buf.sorted
-
     val eventsBySession = mutable.HashMap[Long, Seq[Event]]()
     var prevEvent: Event = null
     var sessionId: Long = 0L
@@ -57,11 +48,11 @@ class CustomAggregator extends Aggregator[Event, Seq[Event], Seq[EventWithSessio
       yield enrichEventWithSessionData(event, eventsSessionStatData(sessionId))
   }
 
-  private[this] def enrichEventWithSessionData(event: Event, sessionData: (Long, Timestamp, Timestamp)): EventWithSession = {
+  private[this] def enrichEventWithSessionData(event: Event, sessionData: (Long, Timestamp, Timestamp)) = {
     EventWithSession(event, sessionData._1, sessionData._2, sessionData._3)
   }
 
-  private[this] def isCloseLessThanFiveMinutes(event1: Event, event2: Event): Boolean =
+  private[this] def isCloseLessThanFiveMinutes(event1: Event, event2: Event) =
     Math.abs(event1.eventTime.getTime - event2.eventTime.getTime) < 5 * 1000 * 60
 
   override def bufferEncoder = ExpressionEncoder()
