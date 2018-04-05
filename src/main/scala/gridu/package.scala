@@ -1,6 +1,6 @@
 import java.sql.Timestamp
 
-package object apple {
+package object gridu {
 
   case class Event(categoryId: Long, productId: Long, userId: Long,
                    title: String, eventTime: Timestamp, eventType: String)
