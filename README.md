@@ -6,7 +6,7 @@ https://docs.google.com/document/d/1ihded5qAWkffR0UvPJ5JolwaKOFijpkkT7_vB_EtlZI/
 
 All sub-tasks have been completed with using Spark SQL on top of DataFrame API.  
 Project contains only 3 files:
-- apple.package contains domain class Event
+- gridu.package contains domain class Event
 - ClickStreamData is an object with test data
 - ClickStreamAnalyzer is a driver program 
 
