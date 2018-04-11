@@ -9,8 +9,9 @@ object ClickStreamAnalyzer {
   def main(args: Array[String]): Unit = {
 
     val spark = SparkSession.builder().master("local[*]").appName("SparkEcommerceDemoApp").getOrCreate()
-    spark.sparkContext.setLogLevel("ERROR")
+    //spark.sparkContext.setLogLevel("ERROR")
     import spark.implicits._
+    spark.sparkContext.setLogLevel("ERROR")
 
     val eventsDS: Dataset[Event] = spark.createDataset(spark.sparkContext.parallelize(ClickStreamData.events))
     eventsDS.createOrReplaceTempView("events")
@@ -72,8 +73,8 @@ object ClickStreamAnalyzer {
             ) ne
           ) de
           )
-          ORDER BY categoryId, eventTime
-      """)
+          CLUSTER BY categoryId, eventTime
+      """).cache()
 
     eventsWithSession.show(50, truncate = false)
     eventsWithSession.createOrReplaceTempView("eventsWithSession")
@@ -93,7 +94,7 @@ object ClickStreamAnalyzer {
     println("Task #3. For each category find # of unique users spending less than 1 min, 1 to 5 mins and more than 5 mins")
     spark.sql(
       """
-        SELECT categoryId, timeGroup, COUNT(DISTINCT userId) as userCount
+        SELECT categoryId, timeGroup, COLLECT_SET(userId) as users
         FROM
         (SELECT
           categoryId, userId,

@@ -17,7 +17,7 @@ object ClickStreamCustomAggregator extends Aggregator[Event, Seq[Event], Seq[Eve
   override def merge(buf1: Seq[Event], buf2: Seq[Event]): Seq[Event] = buf2 ++ buf1
 
   override def finish(buf: Seq[Event]): Seq[EventWithSession]  = {
-    val sortedEvents = buf.sorted
+    val sortedEvents = buf.sortBy(_.eventTime)
     val eventsBySession = mutable.HashMap[Long, Seq[Event]]()
     var prevEvent: Event = null
     var sessionId: Long = 0L
